@@ -8,8 +8,8 @@ from azure.cosmos import CosmosClient, exceptions
 
 app = func.FunctionApp()
 
-_cosmos_client = None
-_container_client = None
+_cosmos_client = os.environ.get("COSMOS_CLIENT")
+_container_client = os.environ.get("CONTAINER_CLIENT")
 
 
 def _get_container_client():
