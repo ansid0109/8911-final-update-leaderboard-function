@@ -3,18 +3,29 @@ import logging
 import os
 
 import azure.functions as func
-from azure.cosmos import CosmosClient
+from azure.cosmos import CosmosClient, PartitionKey
 
 
 app = func.FunctionApp()
 
-cosmos_client = CosmosClient(
-    os.environ["COSMOS_DB_ENDPOINT"],
-    credential=os.environ["COSMOS_DB_KEY"],
+db_name = os.getenv("COSMOS_DB_DATABASE") or os.getenv("COSMOS_DATABASE_NAME", "gamedb")
+container_name = os.getenv("COSMOS_CONTAINER_NAME", "leaderboard")
+
+conn_str = os.getenv("COSMOS_CONNECTION_STRING")
+if conn_str:
+    cosmos_client = CosmosClient.from_connection_string(conn_str)
+else:
+    endpoint = os.getenv("COSMOS_DB_ENDPOINT") or os.getenv("COSMOS_ENDPOINT")
+    key = os.getenv("COSMOS_DB_KEY") or os.getenv("COSMOS_KEY")
+    if not endpoint or not key:
+        raise RuntimeError("Set COSMOS_CONNECTION_STRING or COSMOS_ENDPOINT/COSMOS_KEY")
+    cosmos_client = CosmosClient(endpoint, credential=key)
+
+database = cosmos_client.create_database_if_not_exists(id=db_name)
+container = database.create_container_if_not_exists(
+    id=container_name,
+    partition_key=PartitionKey(path="/playerId"),
 )
-container = cosmos_client.get_database_client(
-    os.getenv("COSMOS_DB_DATABASE", "leaderboard-db")
-).get_container_client("leaderboard")
 
 
 @app.service_bus_queue_trigger(
@@ -30,7 +41,6 @@ def update_leaderboard(msg: func.ServiceBusMessage) -> None:
             "playerId": str(data["playerId"]),
             "playerName": data["playerName"],
             "score": data["score"],
-            "matchId": data["matchId"],
         }
         container.upsert_item(item)
         logging.info("Leaderboard updated for playerId=%s", item["playerId"])
